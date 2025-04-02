@@ -106,7 +106,7 @@ export default function Home() {
   });
 
   const includeInEOD = ["Pull Requests Created", "Issues Created", "Issues Assigned", "Commits Made"];
-  const EODSettings = ["Group by day"];
+  const EODSettings = ["Group by day", "Group by week"];
   const CheckboxGroup = Checkbox.Group;
   const [checkedList, setCheckedList] = useState<CheckboxValueType[]>(includeInEOD);
   const [eodSettingsCheckedList, setEodSettingsCheckedList] = useState<CheckboxValueType[]>([]);
@@ -118,6 +118,7 @@ export default function Home() {
   const [settings, setSettings] = useState({
     fetchGithubToken: githubTokenInput,
     splitByDay: false,
+    splitByWeek: false,
   });
 
   const searchParams = useSearchParams();
@@ -201,6 +202,7 @@ export default function Home() {
     setSettings({
       ...settings,
       splitByDay: eodSettingsCheckedList.includes("Group by day"),
+      splitByWeek: eodSettingsCheckedList.includes("Group by week"),
     });
     setShowEODSettings(false);
   };
@@ -527,7 +529,24 @@ export default function Home() {
 
     let groupedActivitiesText = "";
 
-    if (eodSettingsCheckedList.includes("Group by day")) {
+    if (eodSettingsCheckedList.includes("Group by week")) {
+      const weekGroups: { [key: string]: string[] } = {};
+      Object.keys(groupedActivities).forEach((date) => {
+        if (groupedActivities[date].length === 0) return;
+        const weekStart = dayjs(date).startOf("week").format("YYYY-MM-DD");
+        weekGroups[weekStart] ??= [];
+        weekGroups[weekStart].push(...groupedActivities[date]);
+      });
+
+      Object.keys(weekGroups).forEach((weekStart) => {
+        if (weekGroups[weekStart].length === 0) return;
+        const weekEnd = dayjs(weekStart).endOf("week").format("YYYY-MM-DD");
+        groupedActivitiesText += `**Week of ${dayjs(weekStart).format("DD/MM/YYYY")} - ${dayjs(weekEnd).format(
+          "DD/MM/YYYY"
+        )}**\n${weekGroups[weekStart].join("\n")}\n\n`;
+      });
+      eodMessage = eodMessage.replace("{{TODAY_ACTIVITIES}}", "\n" + groupedActivitiesText.trimEnd());
+    } else if (eodSettingsCheckedList.includes("Group by day")) {
       Object.keys(groupedActivities).forEach((date) => {
         if (groupedActivities[date].length === 0) return;
         groupedActivitiesText += `**${dayjs(date).format("DD/MM/YYYY")}**\n${groupedActivities[date].join("\n")}\n\n`;
