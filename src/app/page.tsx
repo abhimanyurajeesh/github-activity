@@ -102,10 +102,11 @@ export default function Home() {
     issues_assigned: [],
     merged: [],
     commits: [],
+    prs_merged: [],
     error: "",
   });
 
-  const includeInEOD = ["Pull Requests Created", "Issues Created", "Issues Assigned", "Commits Made"];
+  const includeInEOD = ["Pull Requests Created", "Issues Created", "Issues Assigned", "Commits Made", "PRs Merged"];
   const EODSettings = ["Group by day", "Group by week"];
   const CheckboxGroup = Checkbox.Group;
   const [checkedList, setCheckedList] = useState<CheckboxValueType[]>(includeInEOD);
@@ -323,7 +324,7 @@ export default function Home() {
     }
 
     notify("info", "Fetching", "Fetching your GitHub stats");
-    const params = new URLSearchParams(searchParams);
+    const params = new URLSearchParams(searchParams.toString());
     const numDays = dayjs(dateField.value.endDate).diff(dayjs(dateField.value.startDate), "day");
     params.set("username", usernameField.value);
     params.set("org", orgFilter.value);
@@ -349,6 +350,15 @@ export default function Home() {
 
       for (const pr of prData.items) {
         pr.type = "pr-created";
+      }
+
+      // Fetch merged PRs
+      const mergedPRData = await ghfetch(
+        `https://api.github.com/search/issues?q=author:${usernameField.value}+is:pr+is:merged+merged:${dateField.value.startDate}..${dateField.value.endDate}${orgFilterQuery}&per_page=100`
+      );
+
+      for (const pr of mergedPRData.items) {
+        pr.type = "pr-merged";
       }
 
       const issuesAssignedData = await ghfetch(
@@ -405,9 +415,22 @@ export default function Home() {
         if (!isLinkedPRPresent) commits.push(commit);
       }
 
-      const mergedTimeline: any = [...issuesData.items, ...prData.items, ...assignedIssues, ...commits].sort(
-        (a: { created_at: string; assigned_at?: string }, b: { created_at: string; assigned_at?: string }) =>
-          dayjs(a.assigned_at || a.created_at).isAfter(dayjs(b.assigned_at || b.created_at)) ? -1 : 1
+      const mergedTimeline: any = [
+        ...issuesData.items,
+        ...prData.items,
+        ...mergedPRData.items,
+        ...assignedIssues,
+        ...commits,
+      ].sort(
+        (
+          a: { created_at: string; assigned_at?: string; merged_at?: string },
+          b: { created_at: string; assigned_at?: string; merged_at?: string }
+        ) =>
+          dayjs(a.merged_at || a.assigned_at || a.created_at).isAfter(
+            dayjs(b.merged_at || b.assigned_at || b.created_at)
+          )
+            ? -1
+            : 1
       );
 
       setActivity({
@@ -416,6 +439,7 @@ export default function Home() {
         issues_assigned: assignedIssues,
         merged: mergedTimeline,
         commits: commits,
+        prs_merged: mergedPRData.items,
         error: "",
       });
       setFetchBtnState("success");
@@ -443,6 +467,12 @@ export default function Home() {
         return (
           <Tooltip title="Pull Request Created">
             <Icon component={GithubPRIcon} />
+          </Tooltip>
+        );
+      case "pr-merged":
+        return (
+          <Tooltip title="Pull Request Merged">
+            <CheckCircleTwoTone twoToneColor="#722ed1" />
           </Tooltip>
         );
       case "commit-created":
@@ -523,6 +553,18 @@ export default function Home() {
           return `- Comitted [${getRepoName(commit.html_url)}#${commit.sha?.slice(0, 7)}](${commit.html_url}): ${
             commit.title
           }`;
+        })
+      );
+    }
+    if (checkedList.includes("PRs Merged")) {
+      todayActivities = todayActivities.concat(
+        activity.prs_merged.map((pr: any) => {
+          const key = dayjs(pr.merged_at || pr.created_at).format("YYYY-MM-DD");
+          groupedActivities[key] ??= [];
+          groupedActivities[key].push(
+            `- Merged PR [${getRepoName(pr.html_url)}#${pr.number}](${pr.html_url}): ${pr.title}`
+          );
+          return `- Merged PR [${getRepoName(pr.html_url)}#${pr.number}](${pr.html_url}): ${pr.title}`;
         })
       );
     }
