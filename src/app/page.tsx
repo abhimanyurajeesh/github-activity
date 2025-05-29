@@ -290,47 +290,51 @@ export default function Home() {
       state: "checking",
     });
     try {
-      // First verify the user
-      const userRes = await ghfetch(`https://api.github.com/user`);
-      console.log("User data:", userRes);
+      // Try to get user's public organizations first
+      const publicOrgsRes = await ghfetch(`https://api.github.com/users/${username}/orgs`);
+      let orgList = publicOrgsRes.map((org: { login: string }) => ({ login: org.login }));
 
-      // Then get their organizations
-      const orgRes = await ghfetch(`https://api.github.com/user/orgs`);
-      console.log("Org data:", orgRes);
-
-      if (Array.isArray(orgRes)) {
-        const orgList = orgRes.map((org: { login: string }) => ({ login: org.login }));
-        console.log("Processed org list:", orgList);
-
-        if (defaultOrg && orgList.find((org: { login: string }) => org.login === defaultOrg)) {
-          setOrgFilter({
-            value: defaultOrg,
-            list: orgList,
-            error: "",
-          });
-        } else {
-          setOrgFilter({
-            value: "",
-            list: orgList,
-            error: "",
-          });
+      // If we have a token, try to get private organizations too
+      if (settings.fetchGithubToken) {
+        try {
+          const privateOrgsRes = await ghfetch(`https://api.github.com/user/orgs`);
+          if (Array.isArray(privateOrgsRes)) {
+            // Merge and deduplicate organizations
+            const allOrgs = [...orgList, ...privateOrgsRes];
+            orgList = Array.from(new Set(allOrgs.map((org) => org.login))).map((login) => ({ login }));
+          }
+        } catch (error) {
+          console.log("Could not fetch private organizations:", error);
+          // Continue with public orgs only
         }
-
-        setUsernameField({
-          ...usernameField,
-          value: username,
-          error: "",
-          state: "checked",
-        });
-
-        notify("success", "Organizations Found", `Found ${orgList.length} organizations`);
-        return true;
-      } else {
-        throw new Error("Invalid response from GitHub API");
       }
+
+      if (defaultOrg && orgList.find((org: { login: string }) => org.login === defaultOrg)) {
+        setOrgFilter({
+          value: defaultOrg,
+          list: orgList,
+          error: "",
+        });
+      } else {
+        setOrgFilter({
+          value: "",
+          list: orgList,
+          error: "",
+        });
+      }
+
+      setUsernameField({
+        ...usernameField,
+        value: username,
+        error: "",
+        state: "checked",
+      });
+
+      notify("success", "User Found", `Found ${orgList.length} organizations`);
+      return true;
     } catch (error: any) {
       console.error("GitHub API Error:", error);
-      notify("error", "Error", `Failed to fetch organizations: ${error.message}`);
+      notify("error", "Error", `Failed to fetch user data: ${error.message}`);
       setUsernameField({
         ...usernameField,
         value: username,
@@ -404,7 +408,7 @@ export default function Home() {
       return;
     }
 
-    notify("info", "Fetching", "Fetching your GitHub stats");
+    notify("info", "Fetching", "Fetching GitHub stats");
     const params = new URLSearchParams(searchParams.toString());
     const numDays = dayjs(dateField.value.endDate).diff(dayjs(dateField.value.startDate), "day");
     params.set("username", usernameField.value);
@@ -417,6 +421,7 @@ export default function Home() {
       orgFilterQuery = `+org:${orgFilter.value}`;
     }
     try {
+      // Use search API for public data which doesn't require authentication
       const issuesData = await ghfetch(
         `https://api.github.com/search/issues?q=author:${usernameField.value}+is:issue+created:${dateField.value.startDate}..${dateField.value.endDate}${orgFilterQuery}&per_page=100`
       );
@@ -470,22 +475,11 @@ export default function Home() {
         }
       }
 
-      // Update commit fetching to use repository and branch if selected
-      let commitsUrl = `https://api.github.com/search/commits?q=author:${usernameField.value}+committer-date:${dateField.value.startDate}..${dateField.value.endDate}`;
-
-      if (orgFilter.value && repoFilter.value) {
-        commitsUrl = `https://api.github.com/repos/${orgFilter.value}/${repoFilter.value}/commits?author=${usernameField.value}&since=${dateField.value.startDate}&until=${dateField.value.endDate}`;
-        if (branchFilter.value) {
-          commitsUrl += `&sha=${branchFilter.value}`;
-        }
-      } else if (orgFilter.value) {
-        commitsUrl += `+org:${orgFilter.value}`;
-      }
-
-      commitsUrl += "&per_page=100";
+      // Use search API for commits
+      const commitsUrl = `https://api.github.com/search/commits?q=author:${usernameField.value}+committer-date:${dateField.value.startDate}..${dateField.value.endDate}${orgFilterQuery}&per_page=100`;
 
       const commitsData = await ghfetch(commitsUrl);
-      const myCommits = (commitsData.items || commitsData).filter(
+      const myCommits = (commitsData.items || []).filter(
         (commit: any) => commit.committer?.login?.toLowerCase() === usernameField.value.toLowerCase()
       );
       const commits: any = [];
@@ -536,6 +530,14 @@ export default function Home() {
         error: "",
       });
       setFetchBtnState("success");
+
+      if (!settings.fetchGithubToken) {
+        notify(
+          "info",
+          "Limited Access",
+          "Using public data only. Add a GitHub token to see private repositories and organizations."
+        );
+      }
     } catch (error: any) {
       notify("error", "Error", "Something went wrong while fetching your GitHub stats: " + error.message);
       setFetchBtnState("error");
@@ -929,7 +931,7 @@ export default function Home() {
                 <div className="grid grid-cols-4">
                   <div className="col-span-3">
                     <Checkbox indeterminate={indeterminate} onChange={onCheckAllChange} checked={checkAll}>
-                      |
+                      Include All
                     </Checkbox>
                     <CheckboxGroup options={includeInEOD} value={checkedList} onChange={onChange} />
                   </div>
