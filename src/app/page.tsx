@@ -61,6 +61,25 @@ const EOD_TEMPLATE = `**EOD {{DATE}}** @{{ORGANIZATION}}
 **What's next?**
 {{TOMORROW_ACTIVITIES}}`;
 
+const globalStyles = `
+  .notification-compact {
+    padding: 8px 12px !important;
+  }
+  .notification-compact .ant-notification-notice-message {
+    margin-bottom: 0 !important;
+    font-size: 12px !important;
+  }
+  .notification-compact .ant-notification-notice-description {
+    font-size: 10px !important;
+  }
+  @media (max-width: 768px) {
+    .ant-notification-notice {
+      margin-right: 0 !important;
+      margin-left: 0 !important;
+    }
+  }
+`;
+
 export default function Home() {
   const [api, contextHolder] = notification.useNotification();
 
@@ -69,6 +88,12 @@ export default function Home() {
       message,
       description,
       duration: 3,
+      className: "notification-compact",
+      style: {
+        width: "auto",
+        minWidth: "250px",
+        maxWidth: "90vw",
+      },
     });
   };
 
@@ -731,6 +756,9 @@ export default function Home() {
 
   return (
     <>
+      <style jsx global>
+        {globalStyles}
+      </style>
       {contextHolder}
       <div className="py-6">
         <Card className="mx-auto max-w-5xl">
@@ -742,144 +770,217 @@ export default function Home() {
               This is a simple EOD update generator that will help you to create a summary of your GitHub activity
             </Paragraph>
           </Typography>
-          <div className="grid grid-cols-6 gap-4 mb-2">
-            <div>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-2">
+            <div className="hidden md:block md:col-span-1">
               <Text strong>GitHub Username</Text>
               <Paragraph className="text-xs text-gray-500">Enter your GitHub username</Paragraph>
             </div>
-            <div>
+            <div className="hidden md:block md:col-span-1">
               <Text strong>Organization</Text>
               <Paragraph className="text-xs text-gray-500">Select organization</Paragraph>
             </div>
-            <div>
+            <div className="hidden md:block md:col-span-1">
               <Text strong>Repository</Text>
               <Paragraph className="text-xs text-gray-500">Select repository</Paragraph>
             </div>
-            <div>
+            <div className="hidden md:block md:col-span-1">
               <Text strong>Branch</Text>
               <Paragraph className="text-xs text-gray-500">Select branch</Paragraph>
             </div>
-            <div className="col-span-2">
+            <div className="hidden md:block md:col-span-2">
               <Text strong>Date Range</Text>
               <Paragraph className="text-xs text-gray-500">Select time period</Paragraph>
             </div>
           </div>
-          <Space.Compact className="w-full">
-            <Input
-              placeholder="GitHub username"
-              className="w-1/6"
-              value={usernameField.value}
-              onChange={(e) => {
-                setUsernameField({ ...usernameField, value: e.target.value, error: "" });
-              }}
-              status={usernameField.error ? "error" : undefined}
-              suffix={
-                (usernameField.state === "checking" && <LoadingOutlined />) ||
-                (usernameField.value &&
-                  usernameField.state === "checked" &&
-                  (usernameField.error ? (
-                    <CloseCircleTwoTone twoToneColor="#ff4d4f" />
-                  ) : (
-                    <CheckCircleTwoTone twoToneColor="#52c41a" />
-                  ))) || <span />
-              }
-              onBlur={() => {
-                checkGithubUsername(usernameField.value);
-              }}
-              onFocus={() => {
-                setUsernameField({ ...usernameField, state: "focus" });
-              }}
-            />
-            <Select
-              showSearch
-              className="w-1/6"
-              placeholder="Select organization"
-              optionFilterProp="children"
-              onChange={(e) => {
-                setOrgFilter({ ...orgFilter, value: e });
-                fetchRepositories(e);
-              }}
-              value={orgFilter.value}
-              filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
-              options={orgFilter.list.map((org: { login: string }) => ({ label: org.login, value: org.login }))}
-              disabled={usernameField.state !== "checked" || orgFilter.list.length === 0}
-            />
-            <Select
-              showSearch
-              className="w-1/6"
-              placeholder="Select repository"
-              optionFilterProp="children"
-              onChange={(e) => {
-                setRepoFilter({ ...repoFilter, value: e });
-                fetchBranches(orgFilter.value, e);
-              }}
-              value={repoFilter.value}
-              filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
-              options={repoFilter.list.map((repo: { name: string }) => ({ label: repo.name, value: repo.name }))}
-              disabled={!orgFilter.value || repoFilter.list.length === 0}
-            />
-            <Select
-              showSearch
-              className="w-1/6"
-              placeholder="Select branch"
-              optionFilterProp="children"
-              onChange={(e) => {
-                setBranchFilter({ ...branchFilter, value: e });
-              }}
-              value={branchFilter.value}
-              filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
-              options={branchFilter.list.map((branch: { name: string }) => ({
-                label: branch.name,
-                value: branch.name,
-              }))}
-              disabled={!repoFilter.value || branchFilter.list.length === 0}
-            />
-            <RangePicker
-              className="w-1/2"
-              presets={rangePresets}
-              showTime
-              status={dateField.error ? "error" : undefined}
-              format="DD/MM/YYYY HH:mm"
-              onChange={onRangeChange}
-              value={[
-                dateField.value.startDate ? dayjs(dateField.value.startDate) : null,
-                dateField.value.endDate ? dayjs(dateField.value.endDate) : null,
-              ]}
-            />
-            <Button
-              onClick={() => {
-                setShowFetchSettings(true);
-              }}
-              disabled={fetchBtnState === "loading"}
-            >
-              <SettingOutlined />
-            </Button>
-            <Button
-              type="primary"
-              icon={<SearchOutlined />}
-              onClick={fetchGithubStats}
-              loading={fetchBtnState === "loading"}
-            >
-              Fetch
-            </Button>
-          </Space.Compact>
-          {(usernameField.error || dateField.error) && (
-            <div className="mr-8">
-              <Text type="danger" className={`w-1/3 inline-block ${usernameField.error ? "visible" : "invisible"}`}>
-                {usernameField.error}
-              </Text>
-              <Text type="danger" className={`w-1/3 inline-block ${orgFilter.error ? "visible" : "invisible"}`}>
-                {orgFilter.error}
-              </Text>
-              <Text type="danger" className={`w-1/3 inline-block ${dateField.error ? "visible" : "invisible"}`}>
-                {dateField.error}
-              </Text>
+          <Space.Compact className="w-full flex-col md:flex-row space-y-2 md:space-y-0">
+            <div className="flex flex-col w-full md:w-1/6">
+              <div className="md:hidden mb-1">
+                <Text strong>GitHub Username</Text>
+                <Paragraph className="text-xs text-gray-500">Enter your GitHub username</Paragraph>
+              </div>
+              <Input
+                placeholder="GitHub username"
+                value={usernameField.value}
+                onChange={(e) => {
+                  setUsernameField({ ...usernameField, value: e.target.value, error: "" });
+                }}
+                status={usernameField.error ? "error" : undefined}
+                suffix={
+                  (usernameField.state === "checking" && <LoadingOutlined />) ||
+                  (usernameField.value &&
+                    usernameField.state === "checked" &&
+                    (usernameField.error ? (
+                      <CloseCircleTwoTone twoToneColor="#ff4d4f" />
+                    ) : (
+                      <CheckCircleTwoTone twoToneColor="#52c41a" />
+                    ))) || <span />
+                }
+                onBlur={() => {
+                  checkGithubUsername(usernameField.value);
+                }}
+                onFocus={() => {
+                  setUsernameField({ ...usernameField, state: "focus" });
+                }}
+              />
             </div>
-          )}
+            <div className="flex flex-col w-full md:w-1/6">
+              <div className="md:hidden mb-1">
+                <Text strong>Organization</Text>
+                <Paragraph className="text-xs text-gray-500">Select organization</Paragraph>
+              </div>
+              <Select
+                showSearch
+                placeholder="Select organization"
+                optionFilterProp="children"
+                onChange={(e) => {
+                  setOrgFilter({ ...orgFilter, value: e });
+                  fetchRepositories(e);
+                }}
+                value={orgFilter.value}
+                filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+                options={orgFilter.list.map((org: { login: string }) => ({ label: org.login, value: org.login }))}
+                disabled={usernameField.state !== "checked" || orgFilter.list.length === 0}
+              />
+            </div>
+            <div className="flex flex-col w-full md:w-1/6">
+              <div className="md:hidden mb-1">
+                <Text strong>Repository</Text>
+                <Paragraph className="text-xs text-gray-500">Select repository</Paragraph>
+              </div>
+              <Select
+                showSearch
+                placeholder="Select repository"
+                optionFilterProp="children"
+                onChange={(e) => {
+                  setRepoFilter({ ...repoFilter, value: e });
+                  fetchBranches(orgFilter.value, e);
+                }}
+                value={repoFilter.value}
+                filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+                options={repoFilter.list.map((repo: { name: string }) => ({ label: repo.name, value: repo.name }))}
+                disabled={!orgFilter.value || repoFilter.list.length === 0}
+              />
+            </div>
+            <div className="flex flex-col w-full md:w-1/6">
+              <div className="md:hidden mb-1">
+                <Text strong>Branch</Text>
+                <Paragraph className="text-xs text-gray-500">Select branch</Paragraph>
+              </div>
+              <Select
+                showSearch
+                placeholder="Select branch"
+                optionFilterProp="children"
+                onChange={(e) => {
+                  setBranchFilter({ ...branchFilter, value: e });
+                }}
+                value={branchFilter.value}
+                filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+                options={branchFilter.list.map((branch: { name: string }) => ({
+                  label: branch.name,
+                  value: branch.name,
+                }))}
+                disabled={!repoFilter.value || branchFilter.list.length === 0}
+              />
+            </div>
+            <div className="flex flex-col w-full md:w-1/3">
+              <div className="md:hidden mb-1">
+                <Text strong>Date Range</Text>
+                <Paragraph className="text-xs text-gray-500">Select time period</Paragraph>
+              </div>
+              <div className="md:hidden mb-2">
+                <Select
+                  className="w-full"
+                  placeholder="Quick select date range"
+                  onChange={(value) => {
+                    const now = dayjs();
+                    let startDate;
+                    switch (value) {
+                      case "1":
+                        startDate = now.subtract(1, "day");
+                        break;
+                      case "7":
+                        startDate = now.subtract(7, "days");
+                        break;
+                      case "14":
+                        startDate = now.subtract(14, "days");
+                        break;
+                      case "90":
+                        startDate = now.subtract(90, "days");
+                        break;
+                      default:
+                        return;
+                    }
+                    setDateField({
+                      ...dateField,
+                      error: "",
+                      value: {
+                        startDate: startDate.startOf("day").toISOString(),
+                        endDate: now.endOf("day").toISOString(),
+                      },
+                    });
+                  }}
+                  options={[
+                    { label: "Last 1 Day", value: "1" },
+                    { label: "Last 7 Days", value: "7" },
+                    { label: "Last 14 Days", value: "14" },
+                    { label: "Last 90 Days", value: "90" },
+                  ]}
+                />
+              </div>
+              <RangePicker
+                presets={rangePresets}
+                showTime
+                status={dateField.error ? "error" : undefined}
+                format="DD/MM/YYYY HH:mm"
+                onChange={onRangeChange}
+                inputReadOnly={true}
+                value={[
+                  dateField.value.startDate ? dayjs(dateField.value.startDate) : null,
+                  dateField.value.endDate ? dayjs(dateField.value.endDate) : null,
+                ]}
+              />
+            </div>
+            <div className="flex w-full md:w-auto space-x-2">
+              <Button
+                className="flex-1 md:flex-none"
+                onClick={() => {
+                  setShowFetchSettings(true);
+                }}
+                disabled={fetchBtnState === "loading"}
+              >
+                <SettingOutlined />
+              </Button>
+              <Button
+                type="primary"
+                icon={<SearchOutlined />}
+                onClick={fetchGithubStats}
+                loading={fetchBtnState === "loading"}
+                className="flex-1 md:flex-none"
+              >
+                Fetch
+              </Button>
+            </div>
+          </Space.Compact>
+
+          {/* Error messages */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+            <Text type="danger" className={usernameField.error ? "visible" : "invisible"}>
+              {usernameField.error}
+            </Text>
+            <Text type="danger" className={orgFilter.error ? "visible" : "invisible"}>
+              {orgFilter.error}
+            </Text>
+            <Text type="danger" className={dateField.error ? "visible" : "invisible"}>
+              {dateField.error}
+            </Text>
+          </div>
+
           <Divider />
+
+          {/* Activity Timeline */}
           {fetchBtnState === "success" &&
             (activity.merged.length > 0 ? (
-              <div className="">
+              <div>
                 <ConfigProvider
                   theme={{
                     token: {
@@ -890,30 +991,30 @@ export default function Home() {
                   <Timeline
                     mode="left"
                     reverse
+                    className="px-2 md:px-4"
                     items={activity.merged.map((activity: any) => ({
                       label: (
-                        <div className="flex justify-between">
+                        <div className="flex justify-between mr-1">
                           <a
                             href={activity.html_url}
                             target="_blank"
                             rel="noreferrer"
-                            className="italic w-[182px] whitespace-nowrap overflow-hidden overflow-ellipsis text-left"
-                            style={{ direction: "rtl" }}
+                            className="italic text-left truncate max-w-[200px]"
                           >
                             {getRepoNameFromUrl(activity.repository_url || activity.html_url) || "-"}
                             <span className="font-medium">{"#" + (activity.number || activity.sha?.slice(0, 6))}</span>
                           </a>
                           {"  "}
-                          <p>
+                          <p className="text-xs text-gray-500">
                             {dayjs(activity.merged_at || activity.assigned_at || activity.created_at).format(
-                              "Do MMMM YYYY h:mm A"
+                              "DD MMM, h:mm A"
                             )}
                           </p>
                         </div>
                       ),
                       color: "green",
                       dot: getTimelineDot(activity.type),
-                      children: activity.title,
+                      children: <div className="break-words text-sm pr-2">{activity.title}</div>,
                     }))}
                   />
                 </ConfigProvider>
@@ -923,19 +1024,28 @@ export default function Home() {
                 <Text type="secondary">No activity found</Text>
               </div>
             ))}
+
+          {/* EOD Options */}
           {activity.merged.length > 0 && (
             <>
               <Divider className="my-1" />
               <div className="flex flex-col mb-3">
                 <p className="text-md text-gray-500 font-semibold mt-2">Include in EOD</p>
-                <div className="grid grid-cols-4">
-                  <div className="col-span-3">
-                    <Checkbox indeterminate={indeterminate} onChange={onCheckAllChange} checked={checkAll}>
-                      Include All
-                    </Checkbox>
-                    <CheckboxGroup options={includeInEOD} value={checkedList} onChange={onChange} />
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="col-span-1 md:col-span-3">
+                    <div className="flex flex-col space-y-2">
+                      <Checkbox indeterminate={indeterminate} onChange={onCheckAllChange} checked={checkAll}>
+                        Include All
+                      </Checkbox>
+                      <CheckboxGroup
+                        options={includeInEOD}
+                        value={checkedList}
+                        onChange={onChange}
+                        className="flex space-y-1"
+                      />
+                    </div>
                   </div>
-                  <Space.Compact className="col-span-1 mr-0 ml-auto">
+                  <Space.Compact className="col-span-1 flex justify-end mt-4 md:mt-0">
                     <Button
                       type="primary"
                       icon={<SettingOutlined />}
@@ -946,7 +1056,6 @@ export default function Home() {
                     />
                     <Button
                       type="primary"
-                      className="float-right"
                       onClick={() => {
                         setEODMessage(getEODMessage());
                       }}
@@ -958,18 +1067,19 @@ export default function Home() {
               </div>
             </>
           )}
+
+          {/* EOD Preview */}
           {EODMessage && (
-            <div>
-              <TextArea
+            <div className="space-y-4">
+              {/* <TextArea
                 value={EODMessage}
                 autoSize
                 onChange={(e) => {
                   setEODMessage(e.target.value);
                 }}
-              />
-              <div className="my-4"></div>
+              /> */}
               <MarkdownPreview
-                className="border border-gray-300 rounded-lg p-2"
+                className="border border-gray-300 rounded-lg p-2 overflow-x-auto"
                 source={EODMessage}
                 wrapperElement={{
                   "data-color-mode": "light",
