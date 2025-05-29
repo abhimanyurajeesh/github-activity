@@ -96,6 +96,26 @@ export default function Home() {
     error: "",
   });
 
+  const [repoFilter, setRepoFilter] = useState<{
+    list: { name: string }[];
+    value: string;
+    error: string;
+  }>({
+    list: [],
+    value: "",
+    error: "",
+  });
+
+  const [branchFilter, setBranchFilter] = useState<{
+    list: { name: string }[];
+    value: string;
+    error: string;
+  }>({
+    list: [],
+    value: "",
+    error: "",
+  });
+
   const [activity, setActivity] = useState({
     prs: [],
     issues_created: [],
@@ -130,14 +150,18 @@ export default function Home() {
     const headers: { [key: string]: string } = {};
     if (settings.fetchGithubToken) {
       headers["Authorization"] = `token ${settings.fetchGithubToken}`;
+      headers["Accept"] = "application/vnd.github.v3+json";
+      console.log("Making request to:", url);
     }
     const res = await fetch(url, {
       headers,
     });
-    const data = await res.json();
-    if (data?.message) {
-      throw new Error(data.message);
+    if (!res.ok) {
+      const errorData = await res.json();
+      throw new Error(`GitHub API Error: ${errorData.message}`);
     }
+    const data = await res.json();
+    console.log("Response data:", data);
     return data;
   };
 
@@ -191,12 +215,25 @@ export default function Home() {
   };
 
   const saveFetchSettings = () => {
+    const token = githubTokenInput.trim();
+    if (!token) {
+      notify("error", "Invalid Token", "Please enter a valid GitHub token");
+      return;
+    }
+
     setSettings({
       ...settings,
-      fetchGithubToken: githubTokenInput,
+      fetchGithubToken: token,
     });
-    localStorage.setItem("githubToken", githubTokenInput);
+    localStorage.setItem("githubToken", token);
     setShowFetchSettings(false);
+
+    // Recheck username if it exists
+    if (usernameField.value) {
+      setTimeout(() => {
+        checkGithubUsername(usernameField.value);
+      }, 100);
+    }
   };
 
   const saveEODSettings = () => {
@@ -253,17 +290,18 @@ export default function Home() {
       state: "checking",
     });
     try {
-      const orgRes = await ghfetch(`https://api.github.com/users/${username}/orgs`);
-      if (orgRes?.message === "Not Found") {
-        setUsernameField({
-          ...usernameField,
-          value: username,
-          error: "Username not found",
-          state: "checked",
-        });
-        return false;
-      } else {
+      // First verify the user
+      const userRes = await ghfetch(`https://api.github.com/user`);
+      console.log("User data:", userRes);
+
+      // Then get their organizations
+      const orgRes = await ghfetch(`https://api.github.com/user/orgs`);
+      console.log("Org data:", orgRes);
+
+      if (Array.isArray(orgRes)) {
         const orgList = orgRes.map((org: { login: string }) => ({ login: org.login }));
+        console.log("Processed org list:", orgList);
+
         if (defaultOrg && orgList.find((org: { login: string }) => org.login === defaultOrg)) {
           setOrgFilter({
             value: defaultOrg,
@@ -277,18 +315,61 @@ export default function Home() {
             error: "",
           });
         }
+
         setUsernameField({
           ...usernameField,
           value: username,
           error: "",
           state: "checked",
         });
+
+        notify("success", "Organizations Found", `Found ${orgList.length} organizations`);
         return true;
+      } else {
+        throw new Error("Invalid response from GitHub API");
       }
     } catch (error: any) {
-      notify("error", "Error", "Something went wrong while fetching your organizations: " + error.message);
+      console.error("GitHub API Error:", error);
+      notify("error", "Error", `Failed to fetch organizations: ${error.message}`);
+      setUsernameField({
+        ...usernameField,
+        value: username,
+        error: error.message,
+        state: "checked",
+      });
     }
     return false;
+  };
+
+  const fetchRepositories = async (org: string) => {
+    try {
+      const repoRes = await ghfetch(`https://api.github.com/orgs/${org}/repos`);
+      setRepoFilter({
+        value: "",
+        list: repoRes.map((repo: { name: string }) => ({ name: repo.name })),
+        error: "",
+      });
+      setBranchFilter({
+        value: "",
+        list: [],
+        error: "",
+      });
+    } catch (error: any) {
+      notify("error", "Error", "Something went wrong while fetching repositories: " + error.message);
+    }
+  };
+
+  const fetchBranches = async (org: string, repo: string) => {
+    try {
+      const branchRes = await ghfetch(`https://api.github.com/repos/${org}/${repo}/branches`);
+      setBranchFilter({
+        value: "",
+        list: branchRes.map((branch: { name: string }) => ({ name: branch.name })),
+        error: "",
+      });
+    } catch (error: any) {
+      notify("error", "Error", "Something went wrong while fetching branches: " + error.message);
+    }
   };
 
   async function getLinkedPRs(issue_url: string) {
@@ -389,10 +470,22 @@ export default function Home() {
         }
       }
 
-      const commitsData = await ghfetch(
-        `https://api.github.com/search/commits?q=author:${usernameField.value}+committer-date:${dateField.value.startDate}..${dateField.value.endDate}${orgFilterQuery}&per_page=100`
-      );
-      const myCommits = commitsData.items.filter(
+      // Update commit fetching to use repository and branch if selected
+      let commitsUrl = `https://api.github.com/search/commits?q=author:${usernameField.value}+committer-date:${dateField.value.startDate}..${dateField.value.endDate}`;
+
+      if (orgFilter.value && repoFilter.value) {
+        commitsUrl = `https://api.github.com/repos/${orgFilter.value}/${repoFilter.value}/commits?author=${usernameField.value}&since=${dateField.value.startDate}&until=${dateField.value.endDate}`;
+        if (branchFilter.value) {
+          commitsUrl += `&sha=${branchFilter.value}`;
+        }
+      } else if (orgFilter.value) {
+        commitsUrl += `+org:${orgFilter.value}`;
+      }
+
+      commitsUrl += "&per_page=100";
+
+      const commitsData = await ghfetch(commitsUrl);
+      const myCommits = (commitsData.items || commitsData).filter(
         (commit: any) => commit.committer?.login?.toLowerCase() === usernameField.value.toLowerCase()
       );
       const commits: any = [];
@@ -492,6 +585,25 @@ export default function Home() {
 
   function getRepoName(url: string) {
     return url.replace("https://github.com/", "")?.split("/")?.[1] || "";
+  }
+
+  function getRepoNameFromUrl(url: string | undefined): string {
+    if (!url) return "";
+    const parts = url.split("/");
+    if (url.includes("/repos/")) {
+      const repoIndex = parts.indexOf("repos");
+      if (repoIndex >= 0 && parts.length > repoIndex + 2) {
+        return parts[repoIndex + 2];
+      }
+    }
+    // For html_urls
+    if (url.includes("github.com/")) {
+      const githubIndex = parts.indexOf("github.com");
+      if (githubIndex >= 0 && parts.length > githubIndex + 2) {
+        return parts[githubIndex + 2];
+      }
+    }
+    return "";
   }
 
   function getEODMessage() {
@@ -628,10 +740,32 @@ export default function Home() {
               This is a simple EOD update generator that will help you to create a summary of your GitHub activity
             </Paragraph>
           </Typography>
+          <div className="grid grid-cols-6 gap-4 mb-2">
+            <div>
+              <Text strong>GitHub Username</Text>
+              <Paragraph className="text-xs text-gray-500">Enter your GitHub username</Paragraph>
+            </div>
+            <div>
+              <Text strong>Organization</Text>
+              <Paragraph className="text-xs text-gray-500">Select organization</Paragraph>
+            </div>
+            <div>
+              <Text strong>Repository</Text>
+              <Paragraph className="text-xs text-gray-500">Select repository</Paragraph>
+            </div>
+            <div>
+              <Text strong>Branch</Text>
+              <Paragraph className="text-xs text-gray-500">Select branch</Paragraph>
+            </div>
+            <div className="col-span-2">
+              <Text strong>Date Range</Text>
+              <Paragraph className="text-xs text-gray-500">Select time period</Paragraph>
+            </div>
+          </div>
           <Space.Compact className="w-full">
             <Input
               placeholder="GitHub username"
-              className="w-1/4"
+              className="w-1/6"
               value={usernameField.value}
               onChange={(e) => {
                 setUsernameField({ ...usernameField, value: e.target.value, error: "" });
@@ -656,16 +790,47 @@ export default function Home() {
             />
             <Select
               showSearch
-              className="w-1/4"
-              placeholder="Select an organization"
+              className="w-1/6"
+              placeholder="Select organization"
               optionFilterProp="children"
               onChange={(e) => {
                 setOrgFilter({ ...orgFilter, value: e });
+                fetchRepositories(e);
               }}
               value={orgFilter.value}
               filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
               options={orgFilter.list.map((org: { login: string }) => ({ label: org.login, value: org.login }))}
               disabled={usernameField.state !== "checked" || orgFilter.list.length === 0}
+            />
+            <Select
+              showSearch
+              className="w-1/6"
+              placeholder="Select repository"
+              optionFilterProp="children"
+              onChange={(e) => {
+                setRepoFilter({ ...repoFilter, value: e });
+                fetchBranches(orgFilter.value, e);
+              }}
+              value={repoFilter.value}
+              filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+              options={repoFilter.list.map((repo: { name: string }) => ({ label: repo.name, value: repo.name }))}
+              disabled={!orgFilter.value || repoFilter.list.length === 0}
+            />
+            <Select
+              showSearch
+              className="w-1/6"
+              placeholder="Select branch"
+              optionFilterProp="children"
+              onChange={(e) => {
+                setBranchFilter({ ...branchFilter, value: e });
+              }}
+              value={branchFilter.value}
+              filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+              options={branchFilter.list.map((branch: { name: string }) => ({
+                label: branch.name,
+                value: branch.name,
+              }))}
+              disabled={!repoFilter.value || branchFilter.list.length === 0}
             />
             <RangePicker
               className="w-1/2"
@@ -733,13 +898,15 @@ export default function Home() {
                             className="italic w-[182px] whitespace-nowrap overflow-hidden overflow-ellipsis text-left"
                             style={{ direction: "rtl" }}
                           >
-                            {activity.repository_url?.split("/repos/")?.[1] ||
-                              activity.repository.full_name ||
-                              "-" + activity.type}
+                            {getRepoNameFromUrl(activity.repository_url || activity.html_url) || "-"}
                             <span className="font-medium">{"#" + (activity.number || activity.sha?.slice(0, 6))}</span>
                           </a>
                           {"  "}
-                          <p>{dayjs(activity.assigned_at || activity.created_at).format("Do MMMM YYYY h:mm A")}</p>
+                          <p>
+                            {dayjs(activity.merged_at || activity.assigned_at || activity.created_at).format(
+                              "Do MMMM YYYY h:mm A"
+                            )}
+                          </p>
                         </div>
                       ),
                       color: "green",
