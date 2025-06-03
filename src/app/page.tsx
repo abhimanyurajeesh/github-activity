@@ -501,10 +501,22 @@ export default function Home() {
       }
 
       // Use search API for commits
-      const commitsUrl = `https://api.github.com/search/commits?q=author:${usernameField.value}+committer-date:${dateField.value.startDate}..${dateField.value.endDate}${orgFilterQuery}&per_page=100`;
+      let commitsUrl;
+      if (orgFilter.value && repoFilter.value) {
+        // If both org and repo are selected, use the repos API
+        commitsUrl = `https://api.github.com/repos/${orgFilter.value}/${repoFilter.value}/commits?author=${usernameField.value}&since=${dateField.value.startDate}&until=${dateField.value.endDate}`;
+        if (branchFilter.value) {
+          commitsUrl += `&sha=${branchFilter.value}`;
+        }
+      } else {
+        // Otherwise use the search API
+        commitsUrl = `https://api.github.com/search/commits?q=author:${usernameField.value}+committer-date:${dateField.value.startDate}..${dateField.value.endDate}${orgFilterQuery}&per_page=100`;
+      }
 
       const commitsData = await ghfetch(commitsUrl);
-      const myCommits = (commitsData.items || []).filter(
+      // Handle both search API and repos API responses
+      const commitsArray = commitsUrl.includes("/search/") ? commitsData.items : commitsData;
+      const myCommits = (commitsArray || []).filter(
         (commit: any) => commit.committer?.login?.toLowerCase() === usernameField.value.toLowerCase()
       );
       const commits: any = [];
