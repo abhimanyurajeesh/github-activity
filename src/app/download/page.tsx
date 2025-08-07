@@ -36,7 +36,6 @@ const globalStyles = `
 interface ConverterState {
   jsonInput: string;
   csvOutput: string;
-  selectedFields: string[];
   isConverting: boolean;
 }
 
@@ -44,7 +43,7 @@ interface CommandGenerator {
   repository: string;
   state: "merged" | "open" | "closed";
   dateRange: [Dayjs, Dayjs] | null;
-  selectedCommandFields: string[];
+  selectedFields: string[];
   generatedCommand: string;
 }
 
@@ -67,7 +66,6 @@ export default function DownloadPage() {
   const [converter, setConverter] = useState<ConverterState>({
     jsonInput: "",
     csvOutput: "",
-    selectedFields: [],
     isConverting: false,
   });
 
@@ -75,17 +73,7 @@ export default function DownloadPage() {
     repository: "",
     state: "merged",
     dateRange: null,
-    selectedCommandFields: [
-      "number",
-      "title",
-      "state",
-      "author",
-      "createdAt",
-      "mergedAt",
-      "labels",
-      "assignees",
-      "url",
-    ],
+    selectedFields: ["number", "title", "state", "author", "createdAt", "mergedAt", "labels", "assignees", "url"],
     generatedCommand: "",
   });
 
@@ -133,7 +121,7 @@ export default function DownloadPage() {
     let command = `gh pr list --repo ${parsed.owner}/${parsed.repo} --state ${commandGenerator.state}`;
 
     // Add JSON fields
-    const jsonFields = commandGenerator.selectedCommandFields.join(",");
+    const jsonFields = commandGenerator.selectedFields.join(",");
     command += ` --json "${jsonFields}"`;
 
     // Add date range if selected
@@ -204,10 +192,9 @@ export default function DownloadPage() {
         fieldOptions.some((option) => option.value === key)
       );
 
-      // Set default selected fields if none are selected
-      const selectedFields = converter.selectedFields.length > 0 ? converter.selectedFields : availableFields;
-
-      setConverter((prev) => ({ ...prev, selectedFields }));
+      // Use the same fields selected in the command generator
+      const selectedFields =
+        commandGenerator.selectedFields.length > 0 ? commandGenerator.selectedFields : availableFields;
 
       const output = convertJsonToCsv(jsonData, selectedFields);
 
@@ -248,7 +235,6 @@ export default function DownloadPage() {
     setConverter({
       jsonInput: "",
       csvOutput: "",
-      selectedFields: [],
       isConverting: false,
     });
   };
@@ -342,9 +328,9 @@ export default function DownloadPage() {
                 <div>
                   <Checkbox.Group
                     options={fieldOptions}
-                    value={commandGenerator.selectedCommandFields}
+                    value={commandGenerator.selectedFields}
                     onChange={(values: any) =>
-                      setCommandGenerator({ ...commandGenerator, selectedCommandFields: values as string[] })
+                      setCommandGenerator({ ...commandGenerator, selectedFields: values as string[] })
                     }
                     className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3"
                   />
