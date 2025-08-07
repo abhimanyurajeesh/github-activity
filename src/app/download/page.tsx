@@ -155,6 +155,13 @@ export default function DownloadPage() {
         let value = "";
         if (header === "slno") {
           value = (index + 1).toString();
+        } else if (header === "author") {
+          // Extract author name from author object
+          if (item.author && typeof item.author === "object") {
+            value = item.author.name || item.author.login || "";
+          } else {
+            value = item.author || "";
+          }
         } else {
           value = item[header];
           if (value === null || value === undefined) value = "";
